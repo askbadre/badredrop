@@ -1,9 +1,4 @@
 // src/hooks/useWebRTC.ts
-// ─────────────────────────────────────────────────────────────
-// BADRUDROP WEBRTC HOOK (with Signaling)
-// Signaling + WebRTC + File Transfer — sab connected.
-// ─────────────────────────────────────────────────────────────
-
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,9 +10,6 @@ import type { SignalingMessage } from '@/lib/supabase';
 import { getOrCreateDeviceId } from '@/lib/deviceId';
 import type { TransferState } from '@/components/TransferProgress';
 
-// ─────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────
 export interface TransferInfo {
   state: TransferState;
   fileName: string;
@@ -37,15 +29,12 @@ const INITIAL_TRANSFER: TransferInfo = {
   speed: 0,
 };
 
-// ─────────────────────────────────────────────
-// MAIN HOOK
-// ─────────────────────────────────────────────
 export function useWebRTC() {
   const peerRef = useRef<BadrePeer | null>(null);
   const receiverRef = useRef<FileReceiver | null>(null);
   const signalingRef = useRef<SignalingClient | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const peerIdRef = useRef<string | null>(null); // the other device's ID
+  const peerIdRef = useRef<string | null>(null);
   const myIdRef = useRef<string>('');
 
   const [connectionState, setConnectionState] =
@@ -55,90 +44,7 @@ export function useWebRTC() {
   const [isTransferOpen, setIsTransferOpen] = useState(false);
 
   // ─────────────────────────────────────────────
-  // HANDLE INCOMING SIGNALING MESSAGE
-  // ─────────────────────────────────────────────
-  const handleSignal = useCallback(async (msg: SignalingMessage) => {
-    const peer = peerRef.current;
-    if (!peer) return;
-
-    // Remember who we're talking to
-       // Remember who we're talking to
-    if (!peerIdRef.current) {
-      peerIdRef.current = msg.from;
-      // Save for UI
-      localStorage.setItem(
-        'badredrop_last_peer',
-        JSON.stringify({
-          id: msg.from,
-          name: 'Connected Device',
-          type: 'laptop',
-          ts: Date.now(),
-        })
-      );
-    }
-    try {
-           if (msg.type === 'offer') {
-        const answer = await peer.acceptOffer({
-          type: 'offer',
-          data: msg.data,
-        });
-
-        if (answer) {
-          await signalingRef.current?.send('answer', msg.from, answer.data);
-        }
-      } else if (msg.type === 'answer') {
-        // We are caller: apply answer
-        await peer.applyAnswer({ type: 'answer', data: msg.data });
-      } else if (msg.type === 'ice') {
-        // ICE candidate
-        await peer.addIceCandidate({ type: 'ice', data: msg.data });
-      } else if (msg.type === 'bye') {
-        peer.close();
-        peerRef.current = null;
-        setConnectionState('idle');
-      }
-    } catch (err) {
-      console.error('Signal handling failed:', err);
-    }
-  }, []);
-
-  // ─────────────────────────────────────────────
-  // INITIALIZE (once)
-  // ─────────────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-
-    (async () => {
-      const myId = await getOrCreateDeviceId();
-      if (cancelled) return;
-      myIdRef.current = myId;
-
-      // Setup signaling
-      const signaling = new SignalingClient(myId, handleSignal);
-      const ok = await signaling.connect();
-
-      if (cancelled) {
-        await signaling.disconnect();
-        return;
-      }
-
-      if (ok) {
-        signalingRef.current = signaling;
-        setSignalingReady(true);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      signalingRef.current?.disconnect();
-      signalingRef.current = null;
-      peerRef.current?.close();
-      peerRef.current = null;
-    };
-  }, [handleSignal]);
-
-  // ─────────────────────────────────────────────
-  // CREATE PEER (lazy)
+  // ENSURE PEER EXISTS
   // ─────────────────────────────────────────────
   const ensurePeer = useCallback((): BadrePeer => {
     if (peerRef.current) return peerRef.current;
@@ -150,20 +56,14 @@ export function useWebRTC() {
       }
     );
 
-    // Send ICE candidates via signaling
     peer.onIceCandidate = async (signal) => {
       if (peerIdRef.current && signalingRef.current) {
-        await signalingRef.current.send(
-          'ice',
-          peerIdRef.current,
-          signal.data
-        );
+        await signalingRef.current.send('ice', peerIdRef.current, signal.data);
       }
     };
 
     peerRef.current = peer;
 
-    // Setup receiver
     receiverRef.current = new FileReceiver({
       onProgress: (percent, bytes, speed) => {
         setTransfer((prev) => ({
@@ -193,8 +93,92 @@ export function useWebRTC() {
   }, []);
 
   // ─────────────────────────────────────────────
-  // START CONNECTION (caller side)
-  // Called when we scanned a QR (we know the peer)
+  // HANDLE SIGNALING MESSAGE
+  // ─────────────────────────────────────────────
+  const handleSignal = useCallback(
+    async (msg: SignalingMessage) => {
+      // Auto-create peer on incoming signal
+      const peer = ensurePeer();
+
+      // Remember peer
+      if (!peerIdRef.current) {
+        peerIdRef.current = msg.from;
+        // Save for UI so both sides show connected
+        try {
+          localStorage.setItem(
+            'badredrop_last_peer',
+            JSON.stringify({
+              id: msg.from,
+              name: 'Connected Device',
+              type: 'laptop',
+              ts: Date.now(),
+            })
+          );
+        } catch {}
+      }
+
+      try {
+        if (msg.type === 'offer') {
+          const answer = await peer.acceptOffer({
+            type: 'offer',
+            data: msg.data,
+          });
+          if (answer) {
+            await signalingRef.current?.send('answer', msg.from, answer.data);
+          }
+        } else if (msg.type === 'answer') {
+          await peer.applyAnswer({ type: 'answer', data: msg.data });
+        } else if (msg.type === 'ice') {
+          await peer.addIceCandidate({ type: 'ice', data: msg.data });
+        } else if (msg.type === 'bye') {
+          peer.close();
+          peerRef.current = null;
+          peerIdRef.current = null;
+          setConnectionState('idle');
+        }
+      } catch (err) {
+        console.error('Signal handling failed:', err);
+      }
+    },
+    [ensurePeer]
+  );
+
+  // ─────────────────────────────────────────────
+  // INIT SIGNALING (once)
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const myId = await getOrCreateDeviceId();
+      if (cancelled) return;
+      myIdRef.current = myId;
+
+      const signaling = new SignalingClient(myId, handleSignal);
+      const ok = await signaling.connect();
+
+      if (cancelled) {
+        await signaling.disconnect();
+        return;
+      }
+
+      if (ok) {
+        signalingRef.current = signaling;
+        setSignalingReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      signalingRef.current?.disconnect();
+      signalingRef.current = null;
+      peerRef.current?.close();
+      peerRef.current = null;
+    };
+  }, [handleSignal]);
+
+  // ─────────────────────────────────────────────
+  // CONNECT TO PEER (caller side)
   // ─────────────────────────────────────────────
   const connectToPeer = useCallback(
     async (peerDeviceId: string): Promise<boolean> => {
@@ -207,15 +191,13 @@ export function useWebRTC() {
 
       const peer = ensurePeer();
       const offer = await peer.createOffer();
-
-            if (!offer) return false;
+      if (!offer) return false;
 
       const sent = await signalingRef.current.send(
         'offer',
         peerDeviceId,
         offer.data
       );
-
       return sent;
     },
     [ensurePeer]
@@ -279,9 +261,6 @@ export function useWebRTC() {
     });
   }, []);
 
-  // ─────────────────────────────────────────────
-  // CANCEL TRANSFER
-  // ─────────────────────────────────────────────
   const cancelTransfer = useCallback(() => {
     abortRef.current?.abort();
     setTransfer((prev) => ({
@@ -291,17 +270,11 @@ export function useWebRTC() {
     }));
   }, []);
 
-  // ─────────────────────────────────────────────
-  // CLOSE TRANSFER MODAL
-  // ─────────────────────────────────────────────
   const closeTransfer = useCallback(() => {
     setIsTransferOpen(false);
     setTimeout(() => setTransfer(INITIAL_TRANSFER), 300);
   }, []);
 
-  // ─────────────────────────────────────────────
-  // DISCONNECT
-  // ─────────────────────────────────────────────
   const disconnect = useCallback(() => {
     if (peerIdRef.current && signalingRef.current) {
       signalingRef.current.send('bye', peerIdRef.current, '');
@@ -313,9 +286,6 @@ export function useWebRTC() {
     setConnectionState('idle');
   }, []);
 
-  // ─────────────────────────────────────────────
-  // RETURN API
-  // ─────────────────────────────────────────────
   return {
     connectionState,
     signalingReady,

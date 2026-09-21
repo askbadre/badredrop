@@ -280,10 +280,11 @@ export default function Home() {
           isActive={webrtc.isConnected}
         />
 
-        <ConnectedDevices
+               <ConnectedDevices
           devices={devices}
           onConnect={handleConnectDevice}
-          onConnectNew={handleConnectNew}
+          onShowQR={handleConnectNew}
+          onScanQR={() => setShowQRScanner(true)}
         />
 
         {/* Connection Status */}
