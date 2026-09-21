@@ -62,8 +62,20 @@ export function useWebRTC() {
     if (!peer) return;
 
     // Remember who we're talking to
-    if (!peerIdRef.current) peerIdRef.current = msg.from;
-
+       // Remember who we're talking to
+    if (!peerIdRef.current) {
+      peerIdRef.current = msg.from;
+      // Save for UI
+      localStorage.setItem(
+        'badredrop_last_peer',
+        JSON.stringify({
+          id: msg.from,
+          name: 'Connected Device',
+          type: 'laptop',
+          ts: Date.now(),
+        })
+      );
+    }
     try {
            if (msg.type === 'offer') {
         const answer = await peer.acceptOffer({

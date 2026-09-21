@@ -122,6 +122,39 @@ export default function Home() {
     }
   }, [webrtc, webrtc.signalingReady]);
 
+    // ─────────────────────────────────────────────
+  // ADD CONNECTED PEER TO LIST
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (webrtc.connectionState === 'connected') {
+      // Get peer info from localStorage (set during QR scan)
+      const scannedPeer = localStorage.getItem('badredrop_last_peer');
+      if (scannedPeer) {
+        try {
+          const peer = JSON.parse(scannedPeer);
+          setDevices((prev) => {
+            if (prev.some((d) => d.id === peer.id)) {
+              return prev.map((d) =>
+                d.id === peer.id ? { ...d, status: 'connected' as const } : d
+              );
+            }
+            return [
+              ...prev,
+              {
+                id: peer.id,
+                name: peer.name,
+                type: peer.type,
+                status: 'connected' as const,
+              },
+            ];
+          });
+        } catch {
+          // silent
+        }
+      }
+    }
+  }, [webrtc.connectionState]);
+
   // ─────────────────────────────────────────────
   // WATCH CONNECTION STATE
   // ─────────────────────────────────────────────
