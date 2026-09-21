@@ -84,44 +84,7 @@ export default function Home() {
   // CHECK FOR SCANNED PEER (from /connect page)
   // Auto-connect if we came from a QR scan
   // ─────────────────────────────────────────────
-  useEffect(() => {
-    if (!webrtc.signalingReady) return;
-
-    const scannedPeer = localStorage.getItem('badredrop_scanned_peer');
-    if (!scannedPeer) return;
-
-    try {
-      const peer = JSON.parse(scannedPeer);
-
-      // Add to devices list
-      setDevices((prev) => {
-        const filtered = prev.filter((d) => d.id !== peer.id);
-        return [
-          ...filtered,
-          {
-            id: peer.id,
-            name: peer.name,
-            type: peer.type,
-            status: 'available' as const,
-          },
-        ];
-      });
-
-      // Auto-connect to scanned peer
-      (async () => {
-        const ok = await webrtc.connectToPeer(peer.id);
-        if (!ok) {
-          console.warn('Auto-connect failed');
-        }
-      })();
-
-      // Clear flag
-      localStorage.removeItem('badredrop_scanned_peer');
-    } catch {
-      // silent
-    }
-  }, [webrtc, webrtc.signalingReady]);
-
+ 
     // ─────────────────────────────────────────────
   // ADD CONNECTED PEER TO LIST
   // ─────────────────────────────────────────────
@@ -214,22 +177,10 @@ export default function Home() {
   // QR SCANNED (receiver side)
   // Save peer info → /connect page will handle redirect
   // ─────────────────────────────────────────────
-  const handleQRScanned = async (payload: QRPayload) => {
+    const handleQRScanned = async (payload: QRPayload) => {
     setShowQRScanner(false);
 
-    // Save scanned peer
-    localStorage.setItem(
-      'badredrop_scanned_peer',
-      JSON.stringify({
-        id: payload.id,
-        name: payload.name,
-        type: payload.type,
-        ts: payload.ts,
-        scannedAt: Date.now(),
-      })
-    );
-
-    // Add to devices list
+    // Add device to list
     setDevices((prev) => {
       const filtered = prev.filter((d) => d.id !== payload.id);
       return [
@@ -243,7 +194,7 @@ export default function Home() {
       ];
     });
 
-    // Auto-connect
+    // ONLY the scanner sends the offer
     if (webrtc.signalingReady) {
       await webrtc.connectToPeer(payload.id);
     }

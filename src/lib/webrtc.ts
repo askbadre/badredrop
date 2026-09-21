@@ -169,6 +169,12 @@ export class BadrePeer {
     return this.dataChannel?.bufferedAmount ?? 0;
   }
 
+    private currentState: ConnectionState = 'idle';
+
+  getConnectionState(): ConnectionState {
+    return this.currentState;
+  }
+
   // ─────────────────────────────────────────────
   // 10. CHECK CONNECTION
   // ─────────────────────────────────────────────
@@ -302,7 +308,8 @@ export class BadrePeer {
   // ─────────────────────────────────────────────
   // 16. PRIVATE: Update state
   // ─────────────────────────────────────────────
-  private updateState(state: ConnectionState): void {
+   private updateState(state: ConnectionState): void {
+    this.currentState = state;
     this.onStateChange?.(state);
   }
 

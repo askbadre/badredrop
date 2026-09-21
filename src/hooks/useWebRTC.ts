@@ -117,8 +117,25 @@ export function useWebRTC() {
         } catch {}
       }
 
-      try {
+            try {
         if (msg.type === 'offer') {
+          // Ignore if we already sent an offer (we are the caller)
+          if (peer.getConnectionState() === 'creating-offer') {
+            console.log('Ignoring offer — we are caller');
+            return;
+          }
+
+          // Only accept if we are in stable state
+          const currentState = peer.getConnectionState();
+          if (
+            currentState !== 'idle' &&
+            currentState !== 'disconnected' &&
+            currentState !== 'failed'
+          ) {
+            console.log('Ignoring offer — wrong state:', currentState);
+            return;
+          }
+
           const answer = await peer.acceptOffer({
             type: 'offer',
             data: msg.data,
