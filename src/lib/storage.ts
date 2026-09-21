@@ -174,3 +174,35 @@ export function clearSession(): void {
     // silent
   }
 }
+
+// ─────────────────────────────────────────────
+// BLOCKED DEVICES
+// ─────────────────────────────────────────────
+const BLOCKED_KEY = 'badredrop_blocked_devices';
+
+export function getBlockedDevices(): string[] {
+  try {
+    const raw = getPlain(BLOCKED_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function blockDevice(deviceId: string): void {
+  const blocked = getBlockedDevices();
+  if (!blocked.includes(deviceId)) {
+    blocked.push(deviceId);
+    setPlain(BLOCKED_KEY, JSON.stringify(blocked));
+  }
+}
+
+export function unblockDevice(deviceId: string): void {
+  const blocked = getBlockedDevices().filter((id) => id !== deviceId);
+  setPlain(BLOCKED_KEY, JSON.stringify(blocked));
+}
+
+export function isDeviceBlocked(deviceId: string): boolean {
+  return getBlockedDevices().includes(deviceId);
+}

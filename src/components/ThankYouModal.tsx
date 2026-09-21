@@ -1,13 +1,31 @@
 // src/components/ThankYouModal.tsx
-// ─────────────────────────────────────────────────────────────
-// BADRUDROP THANK YOU MODAL
-// Dil se likha hua. User ka support acknowledge karta hai.
-// ─────────────────────────────────────────────────────────────
-
 'use client';
 
 import { MESSAGES } from '@/lib/constants';
 import type { ThankYouModalProps } from '@/types';
+
+const TIER_MESSAGES: Record<string, { title: string; body: string }> = {
+  chai: {
+    title: 'Chai for Badre',
+    body: 'You just bought Badre a cup of chai.\nAfter a 12-hour shift, this warmth means everything.',
+  },
+  lunch: {
+    title: 'Lunch for Badre',
+    body: 'You just bought Badre lunch.\nToday, he will eat with a full heart.',
+  },
+  dinner: {
+    title: 'Dinner for Badre',
+    body: 'You just bought Badre dinner.\nTonight, he sleeps with a grateful smile.',
+  },
+  home: {
+    title: 'One Step Closer',
+    body: 'You just helped send Badre home.\nEvery riyal brings Nepal one step closer.',
+  },
+  nepal: {
+    title: 'A Dream Coming True',
+    body: 'You just bought Badre a flight to Nepal.\nAfter 8 years, you are part of his homecoming.',
+  },
+};
 
 export default function ThankYouModal({
   isOpen,
@@ -15,6 +33,11 @@ export default function ThankYouModal({
   tier,
 }: ThankYouModalProps) {
   if (!isOpen) return null;
+
+  const custom = TIER_MESSAGES[tier] || {
+    title: 'Thank You!',
+    body: MESSAGES.thankYou.subtitle,
+  };
 
   return (
     <div
@@ -28,28 +51,20 @@ export default function ThankYouModal({
         className="bg-white rounded-3xl p-8 max-w-sm w-full text-center animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Emoji */}
         <div className="text-6xl mb-4">{MESSAGES.thankYou.emoji}</div>
 
-        {/* Title */}
-        <h2 className="text-3xl font-bold text-gray-900 mb-2">
-          {MESSAGES.thankYou.title}
+        <h2 className="text-2xl font-bold text-gray-900 mb-3">
+          {custom.title}
         </h2>
 
-        {/* Subtitle */}
-        <p className="text-gray-500 mb-4">{MESSAGES.thankYou.subtitle}</p>
-
-        {/* Message */}
-        <p className="text-sm text-gray-600 leading-relaxed mb-4 whitespace-pre-line">
-          {MESSAGES.thankYou.message}
+        <p className="text-sm text-gray-600 leading-relaxed mb-6 whitespace-pre-line">
+          {custom.body}
         </p>
 
-        {/* Highlight */}
         <p className="text-sm font-semibold text-rose-600 leading-relaxed mb-6 whitespace-pre-line">
           {MESSAGES.thankYou.highlight}
         </p>
 
-        {/* Close Button */}
         <button
           onClick={onClose}
           className="w-full py-3 bg-rose-600 text-white rounded-xl font-bold hover:bg-rose-700 transition-colors"
@@ -57,13 +72,10 @@ export default function ThankYouModal({
           {MESSAGES.thankYou.button}
         </button>
 
-        {/* Footer */}
         <p className="text-xs text-gray-400 italic mt-4">
           {MESSAGES.thankYou.footer}
         </p>
-        <p className="text-sm font-semibold text-gray-900 mt-1">
-          Badre 🇳🇵
-        </p>
+        <p className="text-sm font-semibold text-gray-900 mt-1">Badre 🇳🇵</p>
       </div>
     </div>
   );

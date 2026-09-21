@@ -9,6 +9,8 @@ import { SignalingClient } from '@/lib/signaling';
 import type { SignalingMessage } from '@/lib/supabase';
 import { getOrCreateDeviceId } from '@/lib/deviceId';
 import type { TransferState } from '@/components/TransferProgress';
+import { isDeviceBlocked } from '@/lib/storage';
+
 
 export interface TransferInfo {
   state: TransferState;
@@ -104,6 +106,12 @@ export function useWebRTC() {
     async (msg: SignalingMessage) => {
       // Auto-create peer on incoming signal
       const peer = ensurePeer();
+
+            // Check if blocked
+      if (isDeviceBlocked(msg.from)) {
+        console.log('Blocked device signal ignored:', msg.from);
+        return;
+      }
 
       // Remember peer
       if (!peerIdRef.current) {

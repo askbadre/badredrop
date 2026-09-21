@@ -1,20 +1,13 @@
-// src/components/Header.tsx
-// ─────────────────────────────────────────────────────────────
-// BADRUDROP HEADER
-// Logo + tagline. Update karna easy — sirf yeh file.
-// ─────────────────────────────────────────────────────────────
-
 'use client';
 
 import { APP_CONFIG } from '@/lib/constants';
 
 export default function Header() {
   return (
-    <div className="text-center mb-10">
-      {/* Logo */}
-      <div className="inline-flex items-center justify-center w-24 h-24 rounded-3xl bg-gradient-to-br from-rose-600 to-rose-900 shadow-2xl shadow-rose-500/30 mb-4">
+    <div className="text-center mb-3">
+      <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-rose-600 to-rose-900 shadow-lg shadow-rose-500/30 mb-2">
         <svg
-          className="w-12 h-12 text-white"
+          className="w-6 h-6 text-white"
           fill="currentColor"
           viewBox="0 0 24 24"
           aria-hidden="true"
@@ -23,15 +16,13 @@ export default function Header() {
         </svg>
       </div>
 
-      {/* App Name */}
-      <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
+      <h1 className="text-xl font-bold text-gray-900 tracking-tight">
         {APP_CONFIG.name}
       </h1>
 
-      {/* Tagline Badge */}
-      <div className="inline-flex items-center gap-2 mt-3 px-4 py-1.5 bg-rose-100 rounded-full">
-        <span>{APP_CONFIG.countryFlag}</span>
-        <span className="text-xs font-medium text-rose-700">
+      <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-rose-100 rounded-full">
+        <span className="text-[10px]">{APP_CONFIG.countryFlag}</span>
+        <span className="text-[9px] font-medium text-rose-700">
           {APP_CONFIG.tagline}
         </span>
       </div>

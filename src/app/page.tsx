@@ -223,7 +223,7 @@ export default function Home() {
       </div>
 
       {/* Main Content */}
-      <div className="relative max-w-md mx-auto px-6 py-10">
+      <div className="relative max-w-md mx-auto px-3 py-3">
         <Header />
 
         <DeviceCard

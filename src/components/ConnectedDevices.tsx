@@ -16,8 +16,8 @@ export default function ConnectedDevices({
   onScanQR,
 }: Props) {
   return (
-    <div className="bg-white rounded-3xl p-6 shadow-xl shadow-gray-200/50 mb-4">
-      <h2 className="text-lg font-bold text-gray-900 mb-4">
+        <div className="bg-white rounded-2xl p-4 shadow-lg shadow-gray-200/50 mb-3">
+      <h2 className="text-base font-bold text-gray-900 mb-3">
         Connected Devices
       </h2>
 
@@ -29,12 +29,12 @@ export default function ConnectedDevices({
 
       <div className="space-y-3">
         {devices.map((device: Device) => (
-          <div
+                    <div
             key={device.id}
-            className="flex items-center gap-3 p-3 bg-gray-50 rounded-2xl"
+            className="flex items-center gap-2 p-2 bg-gray-50 rounded-xl"
           >
-            <div className="w-11 h-11 rounded-xl bg-rose-100 flex items-center justify-center">
-              <Laptop className="w-5 h-5 text-rose-600" />
+            <div className="w-9 h-9 rounded-lg bg-rose-100 flex items-center justify-center">
+              <Laptop className="w-4 h-4 text-rose-600" />
             </div>
             <span className="flex-1 font-semibold text-gray-800">
               {device.name}
@@ -59,17 +59,17 @@ export default function ConnectedDevices({
       </div>
 
       {/* 2 BUTTONS — 1 scan, 1 show */}
-      <div className="flex gap-2 mt-4">
+      <div className="flex gap-2 mt-3">
         <button
           onClick={onScanQR}
-          className="flex-1 py-3 bg-rose-600 text-white rounded-2xl font-semibold text-sm hover:bg-rose-700 transition-colors flex items-center justify-center gap-2"
+          className="flex-1 py-2.5 bg-rose-600 text-white rounded-2xl font-semibold text-sm hover:bg-rose-700 transition-colors flex items-center justify-center gap-2"
         >
           <Camera className="w-4 h-4" />
           Scan QR
         </button>
         <button
           onClick={onShowQR}
-          className="flex-1 py-3 border-2 border-dashed border-rose-200 rounded-2xl text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
+          className="flex-1 py-2.5 border-2 border-dashed border-rose-200 rounded-2xl text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
         >
           Show My QR
         </button>
