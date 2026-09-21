@@ -2,7 +2,6 @@
 // ─────────────────────────────────────────────────────────────
 // BADRUDROP WEBRTC
 // Peer-to-peer connection. Zero server. Zero storage.
-// File transfer ka dil.
 // ─────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
@@ -12,10 +11,12 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
 ];
 
 const DATA_CHANNEL_LABEL = 'badredrop-data';
-const CHUNK_SIZE = 128 * 1024; // 16 KB per chunk (safe for all browsers)
+const CHUNK_SIZE = 128 * 1024; // 128 KB
 
 // ─────────────────────────────────────────────
 // 2. TYPES
@@ -33,7 +34,7 @@ export type SignalType = 'offer' | 'answer' | 'ice';
 
 export interface Signal {
   type: SignalType;
-  data: string; // base64 encoded
+  data: string;
 }
 
 export interface FileMeta {
@@ -59,6 +60,7 @@ export class BadrePeer {
   private onStateChange?: (state: ConnectionState) => void;
   private onMessage?: (data: ArrayBuffer | string) => void;
   private pendingCandidates: RTCIceCandidateInit[] = [];
+  private currentState: ConnectionState = 'idle';
 
   constructor(
     onStateChange?: (state: ConnectionState) => void,
@@ -69,7 +71,7 @@ export class BadrePeer {
   }
 
   // ─────────────────────────────────────────────
-  // 4. CREATE OFFER (Caller side)
+  // 4. CREATE OFFER
   // ─────────────────────────────────────────────
   async createOffer(): Promise<Signal> {
     this.updateState('creating-offer');
@@ -86,7 +88,7 @@ export class BadrePeer {
   }
 
   // ─────────────────────────────────────────────
-  // 5. ACCEPT OFFER + CREATE ANSWER (Receiver side)
+  // 5. ACCEPT OFFER
   // ─────────────────────────────────────────────
   async acceptOffer(offerSignal: Signal): Promise<Signal> {
     this.updateState('creating-answer');
@@ -95,9 +97,10 @@ export class BadrePeer {
     const offer = this.decodeSDP(offerSignal.data);
     await this.pc.setRemoteDescription(offer);
 
-    // Add any pending candidates
     for (const candidate of this.pendingCandidates) {
-      await this.pc.addIceCandidate(candidate);
+      try {
+        await this.pc.addIceCandidate(candidate);
+      } catch {}
     }
     this.pendingCandidates = [];
 
@@ -111,16 +114,17 @@ export class BadrePeer {
   }
 
   // ─────────────────────────────────────────────
-  // 6. APPLY ANSWER (Caller side)
+  // 6. APPLY ANSWER
   // ─────────────────────────────────────────────
   async applyAnswer(answerSignal: Signal): Promise<void> {
     if (!this.pc) throw new Error('No peer connection');
     const answer = this.decodeSDP(answerSignal.data);
     await this.pc.setRemoteDescription(answer);
 
-    // Add any pending candidates
     for (const candidate of this.pendingCandidates) {
-      await this.pc.addIceCandidate(candidate);
+      try {
+        await this.pc.addIceCandidate(candidate);
+      } catch {}
     }
     this.pendingCandidates = [];
   }
@@ -130,7 +134,6 @@ export class BadrePeer {
   // ─────────────────────────────────────────────
   async addIceCandidate(signal: Signal): Promise<void> {
     if (!this.pc) {
-      // Buffer candidate for later
       this.pendingCandidates.push(
         JSON.parse(this.decodeFromBase64(signal.data))
       );
@@ -140,9 +143,7 @@ export class BadrePeer {
     const candidate = JSON.parse(this.decodeFromBase64(signal.data));
     try {
       await this.pc.addIceCandidate(candidate);
-    } catch {
-      // Ignore late candidates
-    }
+    } catch {}
   }
 
   // ─────────────────────────────────────────────
@@ -152,14 +153,15 @@ export class BadrePeer {
     if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
       return false;
     }
-
-    if (this.dataChannel.bufferedAmount > 16 * 1024 * 1024) {
-      // Backpressure — wait
+    if (this.dataChannel.bufferedAmount > 64 * 1024 * 1024) {
       return false;
     }
-
-    this.dataChannel.send(data as any);
-    return true;
+    try {
+      this.dataChannel.send(data as any);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -169,14 +171,15 @@ export class BadrePeer {
     return this.dataChannel?.bufferedAmount ?? 0;
   }
 
-    private currentState: ConnectionState = 'idle';
-
+  // ─────────────────────────────────────────────
+  // 10. GET STATE
+  // ─────────────────────────────────────────────
   getConnectionState(): ConnectionState {
     return this.currentState;
   }
 
   // ─────────────────────────────────────────────
-  // 10. CHECK CONNECTION
+  // 11. IS CONNECTED
   // ─────────────────────────────────────────────
   isConnected(): boolean {
     return (
@@ -186,51 +189,57 @@ export class BadrePeer {
   }
 
   // ─────────────────────────────────────────────
-  // 11. CLOSE
+  // 12. CLOSE
   // ─────────────────────────────────────────────
   close(): void {
     if (this.dataChannel) {
       try {
         this.dataChannel.close();
-      } catch {
-        // silent
-      }
+      } catch {}
       this.dataChannel = null;
     }
-
     if (this.pc) {
       try {
         this.pc.close();
-      } catch {
-        // silent
-      }
+      } catch {}
       this.pc = null;
     }
-
     this.pendingCandidates = [];
     this.updateState('disconnected');
   }
 
   // ─────────────────────────────────────────────
-  // 12. PRIVATE: Create Peer Connection
+  // 13. PRIVATE: Create Peer Connection
   // ─────────────────────────────────────────────
   private createPeerConnection(): RTCPeerConnection {
     const pc = new RTCPeerConnection({
       iceServers: ICE_SERVERS,
       iceCandidatePoolSize: 10,
+      bundlePolicy: 'max-bundle',
     });
 
-    // ICE candidate generated
+    // SINGLE onicecandidate handler (was duplicated before)
     pc.onicecandidate = (event) => {
-      if (event.candidate && this.onIceCandidate) {
-        this.onIceCandidate({
-          type: 'ice',
-          data: this.encodeToBase64(JSON.stringify(event.candidate)),
-        });
+      if (event.candidate) {
+        console.log(
+          'ICE TYPE:',
+          event.candidate.type,
+          '| PROTOCOL:',
+          event.candidate.protocol
+        );
+        if (this.onIceCandidate) {
+          this.onIceCandidate({
+            type: 'ice',
+            data: this.encodeToBase64(JSON.stringify(event.candidate)),
+          });
+        }
       }
     };
 
-    // Connection state changes
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE state:', pc.iceConnectionState);
+    };
+
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
       if (state === 'connected') this.updateState('connected');
@@ -239,7 +248,6 @@ export class BadrePeer {
       else if (state === 'failed') this.updateState('failed');
     };
 
-    // Data channel received (receiver side)
     pc.ondatachannel = (event) => {
       this.dataChannel = event.channel;
       this.setupDataChannelHandlers();
@@ -249,7 +257,7 @@ export class BadrePeer {
   }
 
   // ─────────────────────────────────────────────
-  // 13. PRIVATE: Setup Data Channel (caller side)
+  // 14. PRIVATE: Setup Data Channel
   // ─────────────────────────────────────────────
   private setupDataChannel(): void {
     if (!this.pc) return;
@@ -260,7 +268,7 @@ export class BadrePeer {
   }
 
   // ─────────────────────────────────────────────
-  // 14. PRIVATE: Data channel event handlers
+  // 15. PRIVATE: Data channel handlers
   // ─────────────────────────────────────────────
   private setupDataChannelHandlers(): void {
     if (!this.dataChannel) return;
@@ -285,7 +293,7 @@ export class BadrePeer {
   }
 
   // ─────────────────────────────────────────────
-  // 15. PRIVATE: Encode/Decode SDP
+  // 16. PRIVATE: Encode/Decode
   // ─────────────────────────────────────────────
   private encodeSDP(desc: RTCSessionDescriptionInit): string {
     return this.encodeToBase64(JSON.stringify(desc));
@@ -306,21 +314,18 @@ export class BadrePeer {
   }
 
   // ─────────────────────────────────────────────
-  // 16. PRIVATE: Update state
+  // 17. PRIVATE: Update state
   // ─────────────────────────────────────────────
-   private updateState(state: ConnectionState): void {
+  private updateState(state: ConnectionState): void {
     this.currentState = state;
     this.onStateChange?.(state);
   }
 
-  // ─────────────────────────────────────────────
-  // 17. ICE CANDIDATE CALLBACK (set externally)
-  // ─────────────────────────────────────────────
   onIceCandidate?: (signal: Signal) => void;
 }
 
 // ─────────────────────────────────────────────
-// 18. FILE CHUNKING HELPERS
+// 18. HELPERS
 // ─────────────────────────────────────────────
 export function getTotalChunks(fileSize: number): number {
   return Math.ceil(fileSize / CHUNK_SIZE);
@@ -330,9 +335,6 @@ export function getChunkSize(): number {
   return CHUNK_SIZE;
 }
 
-// ─────────────────────────────────────────────
-// 19. PROGRESS CALCULATOR
-// ─────────────────────────────────────────────
 export function calculateProgress(
   bytesTransferred: number,
   totalBytes: number
@@ -341,9 +343,6 @@ export function calculateProgress(
   return Math.min(100, Math.round((bytesTransferred / totalBytes) * 100));
 }
 
-// ─────────────────────────────────────────────
-// 20. FORMAT HELPERS
-// ─────────────────────────────────────────────
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
   const k = 1024;
