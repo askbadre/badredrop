@@ -1,69 +1,138 @@
-import Image from "next/image";
+// src/app/page.tsx
+// ─────────────────────────────────────────────────────────────
+// BADRUDROP MAIN PAGE
+// Sirf components ko assemble karta hai. Sab modular.
+// Kuch change karna ho? Us ek component file pe kaam kar.
+// ─────────────────────────────────────────────────────────────
+
+'use client';
+
+import { useState, useEffect } from 'react';
+import Header from '@/components/Header';
+import DeviceCard from '@/components/DeviceCard';
+import ConnectedDevices from '@/components/ConnectedDevices';
+import AutoSyncToggle from '@/components/AutoSyncToggle';
+import SendFileButton from '@/components/SendFileButton';
+import SupportButton from '@/components/SupportButton';
+import SupportSheet from '@/components/SupportSheet';
+import ThankYouModal from '@/components/ThankYouModal';
+import Footer from '@/components/Footer';
+
+import { SYNC_CONFIG } from '@/lib/constants';
+import { generateDeviceId } from '@/lib/security';
+import {
+  getDeviceName,
+  getSyncState,
+  saveDeviceName,
+  saveSyncState,
+} from '@/lib/storage';
+import type { Device, SupportTier } from '@/types';
 
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+  const [deviceName, setDeviceName] = useState(SYNC_CONFIG.defaultDeviceName);
+  const [deviceId, setDeviceId] = useState('');
+  const [isSyncOn, setIsSyncOn] = useState(SYNC_CONFIG.defaultSyncState);
+  const [showSupport, setShowSupport] = useState(false);
+  const [showThankYou, setShowThankYou] = useState(false);
+  const [selectedTier, setSelectedTier] = useState<SupportTier>('chai');
+
+  // Connected devices (placeholder until real P2P)
+  const [devices] = useState<Device[]>([
+    {
+      id: 'laptop-1',
+      name: "Badre's Laptop",
+      type: 'laptop',
+      status: 'connected',
+    },
+    {
+      id: 'pc-1',
+      name: 'Office PC',
+      type: 'desktop',
+      status: 'available',
+    },
+  ]);
+
+  // Initialize: load saved data
+  useEffect(() => {
+    setMounted(true);
+
+    // Generate or load device ID
+    let id = localStorage.getItem('badredrop_device_id');
+    if (!id) {
+      id = generateDeviceId();
+      localStorage.setItem('badredrop_device_id', id);
+    }
+    setDeviceId(id);
+
+    // Load saved device name
+    const savedName = getDeviceName(SYNC_CONFIG.defaultDeviceName);
+    setDeviceName(savedName);
+
+    // Load saved sync state
+    const savedSync = getSyncState(SYNC_CONFIG.defaultSyncState);
+    setIsSyncOn(savedSync);
+  }, []);
+
+  // Handler: toggle sync
+  const handleToggleSync = (value: boolean) => {
+    setIsSyncOn(value);
+    saveSyncState(value);
+  };
+
+  // Handler: connect device
+  const handleConnectDevice = (id: string) => {
+    console.log('Connecting to device:', id);
+    // TODO: Real P2P connection
+  };
+
+  // Handler: send file
+  const handleSendFile = () => {
+    console.log('Send file clicked');
+    // TODO: File picker + transfer
+  };
+
+  // Handler: select support tier
+  const handleSelectTier = (tier: SupportTier) => {
+    setSelectedTier(tier);
+    setShowSupport(false);
+    setShowThankYou(true);
+    // TODO: Real payment integration
+  };
+
+  if (!mounted) return null;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="min-h-screen bg-gradient-to-b from-rose-50 via-white to-rose-50">
+      {/* Animated background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-20 left-10 w-72 h-72 bg-rose-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
+        <div className="absolute bottom-20 right-10 w-72 h-72 bg-yellow-200 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
+      </div>
+
+      {/* Main Content */}
+      <div className="relative max-w-md mx-auto px-6 py-10">
+        <Header />
+        <DeviceCard deviceName={deviceName} isActive={true} />
+        <ConnectedDevices devices={devices} onConnect={handleConnectDevice} />
+        <AutoSyncToggle isOn={isSyncOn} onToggle={handleToggleSync} />
+        <SendFileButton onSend={handleSendFile} />
+        <SupportButton onClick={() => setShowSupport(true)} />
+        <Footer />
+      </div>
+
+      {/* Modals */}
+      <SupportSheet
+        isOpen={showSupport}
+        onClose={() => setShowSupport(false)}
+        onSelectTier={handleSelectTier}
+      />
+
+      <ThankYouModal
+        isOpen={showThankYou}
+        onClose={() => setShowThankYou(false)}
+        tier={selectedTier}
+      />
+    </main>
   );
 }
