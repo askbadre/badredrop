@@ -66,11 +66,7 @@ export function useWebRTC() {
 
     peerRef.current = peer;
 
-       receiverRef.current = new FileReceiver({
-      sendAck: (fileId, index) => {
-        // Send ACK back to sender
-        peer.send(JSON.stringify({ t: 'chunk-ack', fileId, index }));
-      },
+         receiverRef.current = new FileReceiver({
       onProgress: (percent, bytes, speed) => {
         
         setTransfer((prev) => ({
@@ -78,7 +74,7 @@ export function useWebRTC() {
           state: 'receiving',
           percent,
           bytesTransferred: bytes,
-          speed,
+          speed, 
         }));
         setIsTransferOpen(true);
       },

@@ -1,32 +1,20 @@
 // src/lib/fileTransfer.ts
 // ─────────────────────────────────────────────────────────────
-// BADRUDROP FILE TRANSFER (Reliable + Parallel)
-// Har chunk ka acknowledgment. Guaranteed delivery.
+// BADRUDROP FILE TRANSFER (Fast + Working)
+// Parallel chunks. No ACK complexity.
 // ─────────────────────────────────────────────────────────────
 
 import { getChunkSize, getTotalChunks, calculateProgress, formatBytes } from './webrtc';
 import type { BadrePeer, FileMeta } from './webrtc';
 
-// Parallel chunks
-const PARALLEL_CHUNKS = 8;
+const PARALLEL_CHUNKS = 16;
 
-// Chunk retry settings
-const MAX_CHUNK_RETRIES = 5;
-const ACK_TIMEOUT_MS = 10000;
-
-// ─────────────────────────────────────────────
-// MESSAGE PROTOCOL
-// ─────────────────────────────────────────────
 export type TransferMessage =
   | { t: 'meta'; meta: FileMeta }
-  | { t: 'chunk-ack'; fileId: string; index: number }
   | { t: 'complete'; fileId: string }
   | { t: 'error'; fileId: string; message: string }
   | { t: 'cancel'; fileId: string };
 
-// ─────────────────────────────────────────────
-// SEND FILE (Reliable)
-// ─────────────────────────────────────────────
 export interface SendOptions {
   peer: BadrePeer;
   file: File;
@@ -51,43 +39,6 @@ export async function sendFile(options: SendOptions): Promise<void> {
     totalChunks,
   };
 
-  // Track which chunks are acknowledged
-  const ackedChunks = new Set<number>();
-  let bytesAcked = 0;
-
-  // Wait for ACKs (received via external handler — see setAckHandler)
-  const ackWaiters = new Map<number, () => void>();
-
-  const waitForAck = (index: number): Promise<boolean> => {
-    return new Promise((resolve) => {
-      let resolved = false;
-
-      const onAck = () => {
-        if (resolved) return;
-        resolved = true;
-        ackWaiters.delete(index);
-        clearTimeout(timer);
-        resolve(true);
-      };
-
-      const timer = setTimeout(() => {
-        if (resolved) return;
-        resolved = true;
-        ackWaiters.delete(index);
-        resolve(false);
-      }, ACK_TIMEOUT_MS);
-
-      ackWaiters.set(index, onAck);
-    });
-  };
-
-  // Register this session's ack handler
-  registerAckHandler(fileId, (index: number) => {
-    if (ackedChunks.has(index)) return;
-    ackedChunks.add(index);
-    ackWaiters.get(index)?.();
-  });
-
   try {
     // 1. Send metadata
     const metaSent = await sendWithBackpressure(
@@ -97,72 +48,44 @@ export async function sendFile(options: SendOptions): Promise<void> {
     );
     if (!metaSent) throw new Error('Failed to send metadata');
 
-    // 2. Prepare all chunk packets
-    const packets: ArrayBuffer[] = [];
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * chunkSize;
+    // 2. Send chunks in parallel
+    let bytesSent = 0;
+    let nextChunk = 0;
+    const active = new Set<Promise<void>>();
+
+    const sendChunk = async (index: number): Promise<void> => {
+      if (signal?.aborted) throw new Error('Cancelled');
+
+      const start = index * chunkSize;
       const end = Math.min(start + chunkSize, file.size);
       const chunk = await file.slice(start, end).arrayBuffer();
 
-      const header = `${fileId}|${i}|`;
+      const header = `${fileId}|${index}|`;
       const headerBytes = new TextEncoder().encode(header);
       const packet = new Uint8Array(headerBytes.length + chunk.byteLength);
       packet.set(headerBytes, 0);
       packet.set(new Uint8Array(chunk), headerBytes.length);
-      packets.push(packet.buffer);
-    }
 
-    // 3. Send chunks with retry until all acked
-    let nextIndex = 0;
-    const active = new Set<Promise<void>>();
+      const ok = await sendWithBackpressure(peer, packet.buffer, signal);
+      if (!ok) throw new Error(`Chunk ${index} failed`);
 
-    const sendOne = async (index: number): Promise<void> => {
-      if (signal?.aborted) throw new Error('Cancelled');
-
-      let retries = 0;
-      let sent = false;
-
-      while (retries < MAX_CHUNK_RETRIES && !sent) {
-        if (signal?.aborted) throw new Error('Cancelled');
-
-        const ok = await sendWithBackpressure(peer, packets[index], signal);
-        if (!ok) {
-          retries++;
-          await sleep(100);
-          continue;
-        }
-
-        const acked = await waitForAck(index);
-        if (acked) {
-          sent = true;
-          bytesAcked += new Uint8Array(packets[index]).byteLength;
-          onProgress?.(
-            calculateProgress(bytesAcked, file.size),
-            bytesAcked
-          );
-        } else {
-          retries++;
-        }
-      }
-
-      if (!sent) {
-        throw new Error(`Chunk ${index} failed after ${MAX_CHUNK_RETRIES} retries`);
-      }
+      bytesSent += chunk.byteLength;
+      onProgress?.(calculateProgress(bytesSent, file.size), bytesSent);
     };
 
-    // Pipeline
-    while (nextIndex < totalChunks || active.size > 0) {
-      while (nextIndex < totalChunks && active.size < PARALLEL_CHUNKS) {
-        const idx = nextIndex++;
-        const p = sendOne(idx).finally(() => {
-          active.delete(p);
-        });
+    while (nextChunk < totalChunks || active.size > 0) {
+      while (nextChunk < totalChunks && active.size < PARALLEL_CHUNKS) {
+        const idx = nextChunk++;
+        const p = sendChunk(idx).finally(() => active.delete(p));
         active.add(p);
       }
+      if (active.size > 0) await Promise.race(active);
+    }
 
-      if (active.size > 0) {
-        await Promise.race(active);
-      }
+    // 3. Wait a moment for buffer to drain
+       const drainStart = Date.now();
+    while (peer.getBufferedAmount() > 0 && Date.now() - drainStart < 300000) {
+      await sleep(50);
     }
 
     // 4. Send complete marker
@@ -176,46 +99,16 @@ export async function sendFile(options: SendOptions): Promise<void> {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Transfer failed';
     onError?.(msg);
-  } finally {
-    unregisterAckHandler(fileId);
   }
 }
 
-// ─────────────────────────────────────────────
-// ACK HANDLER REGISTRY (for sender side)
-// ─────────────────────────────────────────────
-const ackHandlers = new Map<string, (index: number) => void>();
-
-export function registerAckHandler(
-  fileId: string,
-  handler: (index: number) => void
-): void {
-  ackHandlers.set(fileId, handler);
-}
-
-export function unregisterAckHandler(fileId: string): void {
-  ackHandlers.delete(fileId);
-}
-
-export function handleAckMessage(fileId: string, index: number): boolean {
-  const handler = ackHandlers.get(fileId);
-  if (handler) {
-    handler(index);
-    return true;
-  }
-  return false;
-}
-
-// ─────────────────────────────────────────────
-// SEND WITH BACKPRESSURE
-// ─────────────────────────────────────────────
 async function sendWithBackpressure(
   peer: BadrePeer,
   data: string | ArrayBuffer,
   signal?: AbortSignal
 ): Promise<boolean> {
-  const MAX_BUFFER = 4 * 1024 * 1024;
-  const MAX_WAIT = 60000;
+  const MAX_BUFFER = 8 * 1024 * 1024;
+  const MAX_WAIT = 300000;
   const startTime = Date.now();
 
   while (peer.getBufferedAmount() > MAX_BUFFER) {
@@ -225,10 +118,10 @@ async function sendWithBackpressure(
   }
 
   let attempts = 0;
-  while (attempts < 50) {
+  while (attempts < 500) {
+    if (signal?.aborted) return false;
     const sent = peer.send(data);
     if (sent) return true;
-    if (signal?.aborted) return false;
     await sleep(20);
     attempts++;
   }
@@ -254,7 +147,6 @@ export interface ReceiverCallbacks {
   onProgress?: (percent: number, bytesReceived: number, speed: number) => void;
   onComplete?: (blob: Blob, meta: FileMeta) => void;
   onError?: (error: string) => void;
-  sendAck?: (fileId: string, index: number) => void; // send ack back to sender
 }
 
 export class FileReceiver {
@@ -266,9 +158,7 @@ export class FileReceiver {
   }
 
   handleIncoming(data: ArrayBuffer | string): boolean {
-    if (typeof data === 'string') {
-      return this.handleControl(data);
-    }
+    if (typeof data === 'string') return this.handleControl(data);
     return this.handleChunk(data);
   }
 
@@ -286,26 +176,16 @@ export class FileReceiver {
         return true;
       }
 
-      if (msg.t === 'chunk-ack') {
-        // This is handled by sender side; ignore here
-        return handleAckMessage(msg.fileId, msg.index);
-      }
-
-      if (msg.t === 'complete') {
-        return this.finalize(msg.fileId);
-      }
-
+      if (msg.t === 'complete') return this.finalize(msg.fileId);
       if (msg.t === 'error') {
         this.callbacks.onError?.(msg.message);
         this.sessions.delete(msg.fileId);
         return true;
       }
-
       if (msg.t === 'cancel') {
         this.sessions.delete(msg.fileId);
         return true;
       }
-
       return false;
     } catch {
       return false;
@@ -315,43 +195,33 @@ export class FileReceiver {
   private handleChunk(buffer: ArrayBuffer): boolean {
     const bytes = new Uint8Array(buffer);
 
-    let firstPipe = -1;
-    let secondPipe = -1;
+    let p1 = -1;
+    let p2 = -1;
     for (let i = 0; i < Math.min(bytes.length, 200); i++) {
       if (bytes[i] === 0x7c) {
-        if (firstPipe === -1) firstPipe = i;
+        if (p1 === -1) p1 = i;
         else {
-          secondPipe = i;
+          p2 = i;
           break;
         }
       }
     }
 
-    if (firstPipe === -1 || secondPipe === -1) return false;
+    if (p1 === -1 || p2 === -1) return false;
 
-    const fileId = new TextDecoder().decode(bytes.slice(0, firstPipe));
-    const indexStr = new TextDecoder().decode(
-      bytes.slice(firstPipe + 1, secondPipe)
-    );
-    const index = parseInt(indexStr, 10);
+    const fileId = new TextDecoder().decode(bytes.slice(0, p1));
+    const index = parseInt(new TextDecoder().decode(bytes.slice(p1 + 1, p2)), 10);
 
     if (!fileId || isNaN(index)) return false;
 
     const session = this.sessions.get(fileId);
     if (!session) return false;
 
-    // Already received? Still send ack, but don't double count
-    if (session.chunks.has(index)) {
-      this.callbacks.sendAck?.(fileId, index);
-      return true;
-    }
+    if (session.chunks.has(index)) return true;
 
-    const chunkData = bytes.slice(secondPipe + 1).buffer;
+    const chunkData = bytes.slice(p2 + 1).buffer;
     session.chunks.set(index, chunkData);
     session.receivedBytes += chunkData.byteLength;
-
-    // SEND ACK IMMEDIATELY
-    this.callbacks.sendAck?.(fileId, index);
 
     const elapsedSec = (Date.now() - session.startedAt) / 1000;
     const speed = elapsedSec > 0 ? session.receivedBytes / elapsedSec : 0;
@@ -367,13 +237,13 @@ export class FileReceiver {
 
     if (session.chunks.size !== session.meta.totalChunks) {
       this.callbacks.onError?.(
-        `Missing chunks: ${session.chunks.size}/${session.meta.totalChunks}`
+        `Missing: ${session.chunks.size}/${session.meta.totalChunks}`
       );
       this.sessions.delete(fileId);
       return false;
     }
 
-    const orderedChunks: ArrayBuffer[] = [];
+    const ordered: ArrayBuffer[] = [];
     for (let i = 0; i < session.meta.totalChunks; i++) {
       const chunk = session.chunks.get(i);
       if (!chunk) {
@@ -381,10 +251,10 @@ export class FileReceiver {
         this.sessions.delete(fileId);
         return false;
       }
-      orderedChunks.push(chunk);
+      ordered.push(chunk);
     }
 
-    const blob = new Blob(orderedChunks, { type: session.meta.type });
+    const blob = new Blob(ordered, { type: session.meta.type });
     this.callbacks.onComplete?.(blob, session.meta);
     this.sessions.delete(fileId);
     return true;
@@ -393,15 +263,8 @@ export class FileReceiver {
   clear(): void {
     this.sessions.clear();
   }
-
-  hasActiveSessions(): boolean {
-    return this.sessions.size > 0;
-  }
 }
 
-// ─────────────────────────────────────────────
-// DOWNLOAD
-// ─────────────────────────────────────────────
 export function downloadBlob(blob: Blob, filename: string): void {
   if (typeof window === 'undefined') return;
   const url = URL.createObjectURL(blob);
