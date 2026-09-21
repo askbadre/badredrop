@@ -1,7 +1,7 @@
 // src/app/page.tsx
 // ─────────────────────────────────────────────────────────────
 // BADRUDROP MAIN PAGE
-// Sab kuch connected. Real WebRTC. Real file transfer.
+// Sab kuch connected: QR pairing + signaling + WebRTC + file transfer
 // ─────────────────────────────────────────────────────────────
 
 'use client';
@@ -81,31 +81,68 @@ export default function Home() {
   }, []);
 
   // ─────────────────────────────────────────────
+  // CHECK FOR SCANNED PEER (from /connect page)
+  // Auto-connect if we came from a QR scan
+  // ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!webrtc.signalingReady) return;
+
+    const scannedPeer = localStorage.getItem('badredrop_scanned_peer');
+    if (!scannedPeer) return;
+
+    try {
+      const peer = JSON.parse(scannedPeer);
+
+      // Add to devices list
+      setDevices((prev) => {
+        const filtered = prev.filter((d) => d.id !== peer.id);
+        return [
+          ...filtered,
+          {
+            id: peer.id,
+            name: peer.name,
+            type: peer.type,
+            status: 'available' as const,
+          },
+        ];
+      });
+
+      // Auto-connect to scanned peer
+      (async () => {
+        const ok = await webrtc.connectToPeer(peer.id);
+        if (!ok) {
+          console.warn('Auto-connect failed');
+        }
+      })();
+
+      // Clear flag
+      localStorage.removeItem('badredrop_scanned_peer');
+    } catch {
+      // silent
+    }
+  }, [webrtc, webrtc.signalingReady]);
+
+  // ─────────────────────────────────────────────
   // WATCH CONNECTION STATE
   // ─────────────────────────────────────────────
   useEffect(() => {
     const state = webrtc.connectionState;
 
     if (state === 'connected') {
-      // Add a connected device to the list
       setDevices((prev) => {
         if (prev.some((d) => d.status === 'connected')) return prev;
-        return [
-          ...prev,
-          {
-            id: 'peer-' + Date.now(),
-            name: 'Connected Device',
-            type: 'laptop',
-            status: 'connected',
-          },
-        ];
+        return prev.map((d) =>
+          d.status === 'available' ? { ...d, status: 'connected' as const } : d
+        );
       });
     }
 
     if (state === 'disconnected' || state === 'failed') {
       setDevices((prev) =>
         prev.map((d) =>
-          d.status === 'connected' ? { ...d, status: 'available' } : d
+          d.status === 'connected'
+            ? { ...d, status: 'available' as const }
+            : d
         )
       );
     }
@@ -129,7 +166,6 @@ export default function Home() {
 
   const handleSendFile = () => {
     if (!webrtc.isConnected) {
-      // Not connected: show QR to pair first
       setShowQRDisplay(true);
       return;
     }
@@ -142,12 +178,25 @@ export default function Home() {
   };
 
   // ─────────────────────────────────────────────
-  // QR SCANNED (peer wants to connect)
+  // QR SCANNED (receiver side)
+  // Save peer info → /connect page will handle redirect
   // ─────────────────────────────────────────────
   const handleQRScanned = async (payload: QRPayload) => {
     setShowQRScanner(false);
 
-    // Add device to list as "connecting"
+    // Save scanned peer
+    localStorage.setItem(
+      'badredrop_scanned_peer',
+      JSON.stringify({
+        id: payload.id,
+        name: payload.name,
+        type: payload.type,
+        ts: payload.ts,
+        scannedAt: Date.now(),
+      })
+    );
+
+    // Add to devices list
     setDevices((prev) => {
       const filtered = prev.filter((d) => d.id !== payload.id);
       return [
@@ -156,16 +205,15 @@ export default function Home() {
           id: payload.id,
           name: payload.name,
           type: payload.type,
-          status: 'available',
+          status: 'available' as const,
         },
       ];
     });
 
-    // We are the receiver: accept offer if QR contains one
-    // In our MVP, QR only contains device ID.
-    // For full WebRTC handshake, QR would need to carry offer SDP.
-    // MVP simplification: show message that pairing is coming next.
-    console.log('Scanned device:', payload);
+    // Auto-connect
+    if (webrtc.signalingReady) {
+      await webrtc.connectToPeer(payload.id);
+    }
   };
 
   // ─────────────────────────────────────────────
@@ -196,22 +244,14 @@ export default function Home() {
 
         <DeviceCard
           deviceName={deviceName}
-          isActive={webrtc.connectionState === 'connected'}
+          isActive={webrtc.isConnected}
         />
 
-                <ConnectedDevices
+        <ConnectedDevices
           devices={devices}
           onConnect={handleConnectDevice}
           onConnectNew={handleConnectNew}
         />
-
-        {/* Connect New Device Button (below ConnectedDevices) */}
-        <button
-          onClick={handleConnectNew}
-          className="w-full mb-4 py-3 border-2 border-dashed border-rose-200 rounded-2xl text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
-        >
-          📱 Show My QR Code
-        </button>
 
         {/* Connection Status */}
         {webrtc.connectionState !== 'idle' && (
@@ -243,10 +283,7 @@ export default function Home() {
         <Footer />
       </div>
 
-      {/* ───────────────────────────────────── */}
-      {/* MODALS */}
-      {/* ───────────────────────────────────── */}
-
+      {/* Modals */}
       <SupportSheet
         isOpen={showSupport}
         onClose={() => setShowSupport(false)}
