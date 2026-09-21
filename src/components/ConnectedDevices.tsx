@@ -9,10 +9,15 @@
 import { Laptop, Wifi } from 'lucide-react';
 import type { ConnectedDevicesProps, Device } from '@/types';
 
+interface Props extends ConnectedDevicesProps {
+  onConnectNew: () => void;
+}
+
 export default function ConnectedDevices({
   devices,
   onConnect,
-}: ConnectedDevicesProps) {
+  onConnectNew,
+}: Props) {
   return (
     <div className="bg-white rounded-3xl p-6 shadow-xl shadow-gray-200/50 mb-4">
       <h2 className="text-lg font-bold text-gray-900 mb-4">
@@ -55,10 +60,13 @@ export default function ConnectedDevices({
         ))}
       </div>
 
-      {/* Connect New Device Button */}
-      <button className="w-full mt-4 py-3 border-2 border-dashed border-rose-200 rounded-2xl text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-colors flex items-center justify-center gap-2">
+            {/* Connect New Device Button — Opens QR Scanner */}
+      <button
+        onClick={onConnectNew}
+        className="w-full mt-4 py-3 border-2 border-dashed border-rose-200 rounded-2xl text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"
+      >
         <Wifi className="w-4 h-4" />
-        Connect New Device
+        Scan QR to Connect
       </button>
     </div>
   );
