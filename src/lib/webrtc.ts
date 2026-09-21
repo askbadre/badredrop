@@ -16,7 +16,7 @@ const ICE_SERVERS: RTCIceServer[] = [
 ];
 
 const DATA_CHANNEL_LABEL = 'badredrop-data';
-const CHUNK_SIZE = 256 * 1024; // 128 KB
+const CHUNK_SIZE = 128 * 1024; // 128 KB
 
 // ─────────────────────────────────────────────
 // 2. TYPES

@@ -7,7 +7,7 @@
 import { getChunkSize, getTotalChunks, calculateProgress, formatBytes } from './webrtc';
 import type { BadrePeer, FileMeta } from './webrtc';
 
-const PARALLEL_CHUNKS = 16;
+const PARALLEL_CHUNKS = 8;
 
 export type TransferMessage =
   | { t: 'meta'; meta: FileMeta }
